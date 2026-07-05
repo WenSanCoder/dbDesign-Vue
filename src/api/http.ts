@@ -39,6 +39,15 @@ export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
   }
 }
 
+export async function apiPostForm<T>(url: string, body: FormData): Promise<T> {
+  try {
+    const { data } = await http.post(url, body)
+    return unwrap<T>(data)
+  } catch (error) {
+    throw new Error(extractErrorMessage(error))
+  }
+}
+
 export async function apiPut<T>(url: string, body?: unknown): Promise<T> {
   try {
     const { data } = await http.put(url, body)

@@ -5,6 +5,9 @@
       <span>浙江工业大学反方教务管理系统</span>
     </div>
     <div class="login-box">
+      <div class="login-avatar">
+        <el-avatar :size="68" :src="cachedAvatarUrl || undefined">{{ loginAvatarText }}</el-avatar>
+      </div>
       <h1>用户登录</h1>
       <el-form label-position="top" @submit.prevent="login">
         <el-form-item label="账号">
@@ -27,17 +30,20 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { apiPost } from '../api/http'
 import { useSessionStore, type SessionUser } from '../stores/session'
+import { getCachedAvatar, resolveAvatarUrl } from '../utils/avatar'
 
 const router = useRouter()
 const session = useSessionStore()
 const loading = ref(false)
 const logoUrl = new URL('../../static/zjut.png', import.meta.url).href
 const form = reactive({ username: 'admin', password: '123456' })
+const cachedAvatarUrl = computed(() => resolveAvatarUrl(getCachedAvatar(form.username)))
+const loginAvatarText = computed(() => (form.username || '用户').slice(0, 1).toUpperCase())
 
 async function login() {
   loading.value = true
@@ -86,6 +92,12 @@ async function login() {
   background: #fff;
   border: 1px solid #dcdfe6;
   border-radius: 4px;
+}
+
+.login-avatar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 18px;
 }
 
 .login-box h1 {
