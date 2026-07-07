@@ -11,9 +11,6 @@
         <span class="time-text">{{ utc8TimeText }}</span>
       </div>
       <div class="header-actions">
-        <el-select model-value="中文" size="small" style="width: 82px">
-          <el-option label="中文" value="中文" />
-        </el-select>
         <div class="user-badge">{{ session.user?.display_name || session.user?.username }}</div>
         <el-button size="small" plain @click="logout">退出</el-button>
       </div>
@@ -77,7 +74,7 @@ const adminMenus = [
     title: '选课管理',
     children: [
       { label: '选课轮次', path: '/admin/rounds' },
-      { label: '选课记录', path: '/student/selections' }
+      { label: '抢课监控', path: '/admin/selection-monitor' }
     ]
   }
 ]

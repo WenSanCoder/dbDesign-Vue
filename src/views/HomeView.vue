@@ -26,7 +26,6 @@
         <h2 class="section-title">公告通知</h2>
         <el-table :data="notices" border height="260">
           <el-table-column prop="title" label="标题" min-width="180" />
-          <el-table-column prop="notice_type" label="类型" width="120" />
           <el-table-column prop="created_at" label="发布时间" width="180" />
         </el-table>
       </section>

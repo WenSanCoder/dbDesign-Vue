@@ -54,6 +54,7 @@
             style="width: 100%"
           />
           <el-input v-else-if="field.type === 'textarea'" v-model="form[field.prop]" type="textarea" :rows="3" placeholder="请输入" />
+          <el-input v-else-if="field.type === 'password'" v-model="form[field.prop]" type="password" show-password placeholder="留空表示不修改" />
           <el-input v-else-if="field.type === 'number'" v-model="form[field.prop]" inputmode="decimal" placeholder="请输入" />
           <el-input v-else v-model="form[field.prop]" placeholder="请输入" />
         </el-form-item>
@@ -75,7 +76,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from '../../api/http'
 interface FieldConfig {
   prop: string
   label: string
-  type?: 'text' | 'number' | 'select' | 'boolean' | 'date' | 'datetime' | 'textarea'
+  type?: 'text' | 'number' | 'select' | 'boolean' | 'date' | 'datetime' | 'textarea' | 'password'
   optionsKey?: string
   uiOnly?: boolean
 }
@@ -164,7 +165,9 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'gender', label: '性别' },
       { prop: 'class_name', label: '行政班' },
       { prop: 'phone', label: '联系电话' },
-      { prop: 'status', label: '状态' }
+      { prop: 'status', label: '状态' },
+      { prop: 'username', label: '登录账号' },
+      { prop: 'account_status', label: '账号状态' }
     ],
     fields: [
       { prop: 'student_no', label: '学号' },
@@ -174,7 +177,10 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'phone', label: '联系电话' },
       { prop: 'admin_class_id', label: '行政班', type: 'select', optionsKey: 'adminClasses' },
       { prop: 'region_id', label: '生源地', type: 'select', optionsKey: 'regions' },
-      { prop: 'status', label: '状态', type: 'select', optionsKey: 'studentStatus' }
+      { prop: 'status', label: '状态', type: 'select', optionsKey: 'studentStatus' },
+      { prop: 'username', label: '登录账号' },
+      { prop: 'password_text', label: '登录密码', type: 'password' },
+      { prop: 'account_status', label: '账号状态', type: 'select', optionsKey: 'accountStatus' }
     ]
   },
   teachers: {
@@ -187,7 +193,9 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'title', label: '职称' },
       { prop: 'college_name', label: '学院' },
       { prop: 'phone', label: '联系电话' },
-      { prop: 'status', label: '状态' }
+      { prop: 'status', label: '状态' },
+      { prop: 'username', label: '登录账号' },
+      { prop: 'account_status', label: '账号状态' }
     ],
     fields: [
       { prop: 'teacher_no', label: '工号' },
@@ -197,7 +205,10 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'title', label: '职称', type: 'select', optionsKey: 'teacherTitle' },
       { prop: 'phone', label: '联系电话' },
       { prop: 'college_id', label: '学院', type: 'select', optionsKey: 'colleges' },
-      { prop: 'status', label: '状态', type: 'select', optionsKey: 'teacherStatus' }
+      { prop: 'status', label: '状态', type: 'select', optionsKey: 'teacherStatus' },
+      { prop: 'username', label: '登录账号' },
+      { prop: 'password_text', label: '登录密码', type: 'password' },
+      { prop: 'account_status', label: '账号状态', type: 'select', optionsKey: 'accountStatus' }
     ]
   },
   terms: {
@@ -293,6 +304,10 @@ const configs: Record<string, ResourceConfig> = {
 
 const staticOptions: Record<string, Array<{ label: string; value: any }>> = {
   status: [
+    { label: '启用', value: 'enabled' },
+    { label: '停用', value: 'disabled' }
+  ],
+  accountStatus: [
     { label: '启用', value: 'enabled' },
     { label: '停用', value: 'disabled' }
   ],
@@ -424,6 +439,7 @@ function displayValue(prop: string, value: any) {
 function optionKeyByColumn(prop: string) {
   const map: Record<string, string> = {
     status: resource.value === 'students' ? 'studentStatus' : resource.value === 'teachers' ? 'teacherStatus' : resource.value === 'teaching-classes' ? 'classStatus' : resource.value === 'rounds' ? 'roundStatus' : 'status',
+    account_status: 'accountStatus',
     gender: 'gender',
     exam_type: 'examType',
     course_type: 'courseType',

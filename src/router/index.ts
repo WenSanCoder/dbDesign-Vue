@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import HomeView from '../views/HomeView.vue'
 import AdminResourceView from '../views/admin/AdminResourceView.vue'
+import AdminSelectionMonitorView from '../views/admin/AdminSelectionMonitorView.vue'
 import StudentCourseSelectionView from '../views/student/StudentCourseSelectionView.vue'
 import StudentSelectionsView from '../views/student/StudentSelectionsView.vue'
 import StudentScheduleView from '../views/student/StudentScheduleView.vue'
@@ -15,6 +16,7 @@ const router = createRouter({
   routes: [
     { path: '/login', component: LoginView },
     { path: '/', component: HomeView },
+    { path: '/admin/selection-monitor', component: AdminSelectionMonitorView },
     { path: '/admin/:resource', component: AdminResourceView },
     { path: '/student/select', component: StudentCourseSelectionView },
     { path: '/student/selections', component: StudentSelectionsView },
