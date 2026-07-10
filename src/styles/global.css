@@ -79,6 +79,12 @@ body,
   grid-template-columns: 82px repeat(7, minmax(120px, 1fr));
   border-top: 1px solid #dcdfe6;
   border-left: 1px solid #dcdfe6;
+  overflow-x: auto;
+}
+
+.schedule-grid-wide {
+  grid-template-columns: 72px 92px repeat(7, minmax(150px, 1fr));
+  min-width: 1220px;
 }
 
 .schedule-cell {
@@ -101,4 +107,41 @@ body,
   background: #f6fbff;
   padding: 6px;
   line-height: 1.5;
+  display: grid;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.schedule-title {
+  text-align: center;
+  color: #1f2d3d;
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.period-no,
+.period-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media print {
+  .system-header,
+  .top-nav,
+  .no-print {
+    display: none !important;
+  }
+
+  .main-content,
+  .page {
+    padding: 0;
+    background: #fff;
+  }
+
+  .plain-panel {
+    border: 0;
+    padding: 0;
+  }
 }

@@ -3,13 +3,31 @@
     <h1 class="page-title">成绩录入</h1>
     <section class="plain-panel">
       <div class="filter-row">
+        <span>学年</span>
+        <el-select v-model="filters.academicYear" placeholder="学年" clearable filterable style="width: 150px" @change="onTermFilterChange">
+          <el-option v-for="year in academicYears" :key="year" :label="year" :value="year" />
+        </el-select>
+        <span>学期</span>
+        <el-select v-model="filters.semester" placeholder="学期" clearable style="width: 110px" @change="onTermFilterChange">
+          <el-option label="第1学期" :value="1" />
+          <el-option label="第2学期" :value="2" />
+          <el-option label="第3学期" :value="3" />
+        </el-select>
         <span>教学班</span>
         <el-select v-model="selectedClassId" placeholder="请选择教学班" style="width: 280px" @change="loadGrades">
-          <el-option v-for="item in classes" :key="item.teaching_class_id" :label="`${item.course_name} - ${item.class_name}`" :value="item.teaching_class_id" />
+          <el-option v-for="item in classes" :key="item.teaching_class_id" :label="classLabel(item)" :value="item.teaching_class_id" />
         </el-select>
         <el-button type="primary" :disabled="!selectedClassId" @click="save(false)">保存草稿</el-button>
         <el-button type="success" :disabled="!selectedClassId" @click="save(true)">提交成绩</el-button>
         <el-button :disabled="!selectedClassId" @click="loadStats">成绩统计</el-button>
+      </div>
+      <div class="weight-row">
+        <span>成绩占比</span>
+        <el-input-number v-model="usualWeight" :min="0" :max="100" :step="5" controls-position="right" @change="syncExamWeight" />
+        <span>平时分 %</span>
+        <el-input-number v-model="examWeight" :min="0" :max="100" :step="5" controls-position="right" @change="syncUsualWeight" />
+        <span>考试分 %</span>
+        <el-tag :type="weightValid ? 'success' : 'danger'">合计 {{ weightTotal }}%</el-tag>
       </div>
     </section>
     <section class="plain-panel">
@@ -54,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiGet, apiPost } from '../../api/http'
@@ -65,17 +83,40 @@ const route = useRoute()
 const teacherId = session.user?.related_id || 1
 const classes = ref<any[]>([])
 const grades = ref<any[]>([])
+const terms = ref<any[]>([])
 const selectedClassId = ref<number | null>(route.query.classId ? Number(route.query.classId) : null)
 const stats = ref<any>(null)
+const usualWeight = ref(30)
+const examWeight = ref(70)
+const filters = reactive({
+  academicYear: '',
+  semester: undefined as number | undefined
+})
+
+const academicYears = computed(() => Array.from(new Set(terms.value.map((item) => item.academic_year))).filter(Boolean))
 
 onMounted(async () => {
+  await loadLookups()
   await loadClasses()
   if (selectedClassId.value) await loadGrades()
 })
 
+async function loadLookups() {
+  try {
+    const lookups = await apiGet<Record<string, any[]>>('/lookups')
+    terms.value = lookups.terms || []
+    applyCurrentTermFilters()
+  } catch {
+    terms.value = []
+  }
+}
+
 async function loadClasses() {
   try {
-    classes.value = await apiGet(`/teacher/${teacherId}/classes`)
+    const params: Record<string, unknown> = {}
+    if (filters.academicYear) params.academicYear = filters.academicYear
+    if (filters.semester) params.semester = filters.semester
+    classes.value = await apiGet(`/teacher/${teacherId}/classes`, params)
     if (!selectedClassId.value && classes.value.length) selectedClassId.value = classes.value[0].teaching_class_id
     if (selectedClassId.value) await loadGrades()
   } catch (error) {
@@ -83,30 +124,95 @@ async function loadClasses() {
   }
 }
 
+async function onTermFilterChange() {
+  selectedClassId.value = null
+  grades.value = []
+  stats.value = null
+  await loadClasses()
+}
+
+function classLabel(item: any) {
+  const term = item.academic_year && item.semester ? `${item.academic_year}-${item.semester}` : ''
+  return [item.course_name, term, item.class_name].filter(Boolean).join(' - ')
+}
+
+function applyCurrentTermFilters() {
+  const current = inferCurrentTerm(terms.value)
+  filters.academicYear = current?.academic_year || ''
+  filters.semester = current ? Number(current.semester) : undefined
+}
+
+function inferCurrentTerm(list: any[]) {
+  const today = getUtc8Today()
+  const byDate = list.find((item) => {
+    const start = parseDate(item.start_date)
+    const end = parseDate(item.end_date)
+    return start && end && today >= start && today <= end
+  })
+  return byDate || list.find((item) => item.is_current) || list[0]
+}
+
+function getUtc8Today() {
+  const now = new Date()
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60_000
+  const utc8 = new Date(utcTime + 8 * 60 * 60_000)
+  utc8.setHours(0, 0, 0, 0)
+  return utc8
+}
+
+function parseDate(value: string | undefined) {
+  if (!value) return null
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 async function loadGrades() {
   if (!selectedClassId.value) return
   try {
     grades.value = await apiGet(`/teacher/${teacherId}/classes/${selectedClassId.value}/grades`)
+    const firstGrade = grades.value.find((row) => row.usual_weight !== undefined && row.exam_weight !== undefined)
+    usualWeight.value = Number(firstGrade?.usual_weight ?? 30)
+    examWeight.value = Number(firstGrade?.exam_weight ?? 70)
+    stats.value = null
   } catch (error) {
     ElMessage.error((error as Error).message)
   }
 }
 
+const weightTotal = computed(() => Number(usualWeight.value || 0) + Number(examWeight.value || 0))
+const weightValid = computed(() => Math.abs(weightTotal.value - 100) < 0.001)
+
+function syncExamWeight() {
+  examWeight.value = 100 - Number(usualWeight.value || 0)
+}
+
+function syncUsualWeight() {
+  usualWeight.value = 100 - Number(examWeight.value || 0)
+}
+
 function calcFinal(row: any) {
+  if (row.usual_score === '' || row.usual_score === null || row.usual_score === undefined) return '-'
+  if (row.exam_score === '' || row.exam_score === null || row.exam_score === undefined) return '-'
   const usual = Number(row.usual_score ?? 0)
   const exam = Number(row.exam_score ?? 0)
-  return (usual * 0.3 + exam * 0.7).toFixed(2)
+  return (usual * Number(usualWeight.value || 0) / 100 + exam * Number(examWeight.value || 0) / 100).toFixed(2)
 }
 
 async function save(submit: boolean) {
   if (!selectedClassId.value) return
   try {
+    if (!weightValid.value) {
+      ElMessage.error('平时分和考试分占比之和必须为 100%')
+      return
+    }
     if (submit) await ElMessageBox.confirm('提交后学生端可查询成绩，确定提交吗？', '提交确认', { type: 'warning' })
     const body = {
       grades: grades.value.map((row) => ({
         selectionId: row.selection_id,
         usualScore: row.usual_score === '' ? null : Number(row.usual_score),
         examScore: row.exam_score === '' ? null : Number(row.exam_score),
+        usualWeight: Number(usualWeight.value || 0),
+        examWeight: Number(examWeight.value || 0),
         remark: row.remark
       }))
     }
@@ -135,5 +241,13 @@ async function loadStats() {
 .section-title {
   margin: 0 0 12px;
   font-size: 16px;
+}
+
+.weight-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #606266;
 }
 </style>

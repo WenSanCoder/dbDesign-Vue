@@ -55,18 +55,26 @@ const adminMenus = [
   {
     title: '信息维护',
     children: [
+      { label: '校区维护', path: '/admin/campuses' },
       { label: '学院管理', path: '/admin/colleges' },
       { label: '专业管理', path: '/admin/majors' },
+      { label: '学年学期维护', path: '/admin/terms' },
+      { label: '入学年级维护', path: '/admin/grade-years' },
+      { label: '教学楼维护', path: '/admin/buildings' },
+      { label: '教室维护', path: '/admin/classrooms' },
+      { label: '教室占用查询', path: '/admin/room-schedules' },
       { label: '行政班管理', path: '/admin/admin-classes' },
       { label: '学生管理', path: '/admin/students' },
-      { label: '教师管理', path: '/admin/teachers' }
+      { label: '教师管理', path: '/admin/teachers' },
+      { label: '公告发布', path: '/admin/notices' }
     ]
   },
   {
     title: '教学资源',
     children: [
-      { label: '学期管理', path: '/admin/terms' },
       { label: '课程目录', path: '/admin/courses' },
+      { label: '培养方案课程', path: '/admin/teaching-plans' },
+      { label: '最低学分要求', path: '/admin/training-requirements' },
       { label: '教学班管理', path: '/admin/teaching-classes' }
     ]
   },
@@ -89,7 +97,7 @@ const studentMenus = [
     ]
   },
   { title: '课表查询', children: [{ label: '我的课表', path: '/student/schedule' }] },
-  { title: '信息查询', children: [{ label: '我的成绩', path: '/student/grades' }] }
+  { title: '信息查询', children: [{ label: '我的成绩', path: '/student/grades' }, { label: '培养计划', path: '/student/training-plan' }] }
 ]
 
 const teacherMenus = [
