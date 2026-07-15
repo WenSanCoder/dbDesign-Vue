@@ -1,16 +1,19 @@
 <template>
   <span class="xlsx-import">
     <input ref="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden @change="handleFile" />
-    <el-button :icon="Upload" :loading="uploading" @click="chooseFile">批量导入 XLSX</el-button>
+    <el-button :loading="uploading" @click="chooseFile">
+      <img v-if="!uploading" class="import-icon" :src="importIconUrl" alt="" />
+      <span>批量导入</span>
+    </el-button>
   </span>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload } from '@element-plus/icons-vue'
 import { apiPostForm } from '../../api/http'
 
+const importIconUrl = new URL('../../../static/import.png', import.meta.url).href
 const props = defineProps<{ importType:string; operatorUserId?:number }>()
 const emit = defineEmits<{ imported:[result:any] }>()
 const fileInput = ref<HTMLInputElement>()
@@ -37,4 +40,15 @@ async function handleFile(event:Event) {
 }
 </script>
 
-<style scoped>.xlsx-import{display:inline-flex}</style>
+<style scoped>
+.xlsx-import {
+  display: inline-flex;
+}
+
+.import-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  object-fit: contain;
+}
+</style>

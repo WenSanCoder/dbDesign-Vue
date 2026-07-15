@@ -11,10 +11,11 @@
         <el-table-column label="容量" width="110">
           <template #default="{ row }">{{ row.selected_count }} / {{ row.capacity }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showStudents(row)">学生名单</el-button>
             <el-button size="small" type="primary" @click="goGrades(row)">成绩录入</el-button>
+            <el-button size="small" type="success" :icon="Bell" @click="openNoticeDialog(row)">发通知</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -55,14 +56,47 @@
         />
       </div>
     </el-dialog>
+
+    <el-dialog v-model="noticeDialog" title="发布教学班通知" width="620px" destroy-on-close>
+      <el-form label-width="88px">
+        <el-form-item label="教学班">
+          <el-input :model-value="noticeTarget?.class_name || '-'" disabled />
+        </el-form-item>
+        <el-form-item label="通知级别" required>
+          <el-radio-group v-model="noticeForm.noticeType">
+            <el-radio-button value="normal">普通</el-radio-button>
+            <el-radio-button value="important">重要</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="标题" required>
+          <el-input v-model="noticeForm.title" maxlength="200" show-word-limit placeholder="请输入通知标题" />
+        </el-form-item>
+        <el-form-item label="正文" required>
+          <el-input
+            v-model="noticeForm.content"
+            type="textarea"
+            :rows="7"
+            maxlength="2000"
+            show-word-limit
+            resize="vertical"
+            placeholder="请输入面向全班学生的通知内容"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="noticeDialog = false">取消</el-button>
+        <el-button type="primary" :loading="noticePublishing" @click="publishNotice">发布</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { apiGet } from '../../api/http'
+import { Bell } from '@element-plus/icons-vue'
+import { apiGet, apiPost } from '../../api/http'
 import { useSessionStore } from '../../stores/session'
 
 const session = useSessionStore()
@@ -77,6 +111,10 @@ const studentKeyword = ref('')
 const studentPage = ref(1)
 const studentPageSize = ref(10)
 const studentTotal = ref(0)
+const noticeDialog = ref(false)
+const noticePublishing = ref(false)
+const noticeTarget = ref<any | null>(null)
+const noticeForm = reactive({ noticeType: 'normal', title: '', content: '' })
 const teacherId = session.user?.related_id || 1
 
 onMounted(load)
@@ -125,6 +163,39 @@ async function loadStudents() {
 
 function goGrades(row: any) {
   router.push({ path: '/teacher/grades', query: { classId: row.teaching_class_id } })
+}
+
+function openNoticeDialog(row: any) {
+  noticeTarget.value = row
+  Object.assign(noticeForm, { noticeType: 'normal', title: '', content: '' })
+  noticeDialog.value = true
+}
+
+async function publishNotice() {
+  const teachingClassId = Number(noticeTarget.value?.teaching_class_id)
+  if (!teachingClassId) return
+  if (!noticeForm.title.trim()) {
+    ElMessage.warning('请输入通知标题')
+    return
+  }
+  if (!noticeForm.content.trim()) {
+    ElMessage.warning('请输入通知正文')
+    return
+  }
+  noticePublishing.value = true
+  try {
+    await apiPost(`/governance/teachers/${teacherId}/classes/${teachingClassId}/notices`, {
+      noticeType: noticeForm.noticeType,
+      title: noticeForm.title.trim(),
+      content: noticeForm.content.trim()
+    })
+    noticeDialog.value = false
+    ElMessage.success('通知已发送给全班学生')
+  } catch (error) {
+    ElMessage.error((error as Error).message)
+  } finally {
+    noticePublishing.value = false
+  }
 }
 
 function genderText(value: string) {

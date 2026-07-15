@@ -16,7 +16,6 @@ import StudentTrainingPlanView from '../views/student/StudentTrainingPlanView.vu
 import StudentGovernanceView from '../views/student/StudentGovernanceView.vue'
 import TeacherClassesView from '../views/teacher/TeacherClassesView.vue'
 import TeacherGradesView from '../views/teacher/TeacherGradesView.vue'
-import TeacherGovernanceView from '../views/teacher/TeacherGovernanceView.vue'
 import { useSessionStore } from '../stores/session'
 
 const router = createRouter({
@@ -43,7 +42,7 @@ const router = createRouter({
     { path: '/student/governance', component: StudentGovernanceView, meta: { permission: 'student.info.governance' } },
     { path: '/teacher/classes', component: TeacherClassesView, meta: { permission: 'teacher.teaching.classes' } },
     { path: '/teacher/grades', component: TeacherGradesView, meta: { permission: 'teacher.grades.entry' } },
-    { path: '/teacher/governance', component: TeacherGovernanceView, meta: { permission: 'teacher.grades.governance' } }
+    { path: '/teacher/governance', redirect: '/teacher/classes' }
   ]
 })
 

@@ -112,7 +112,7 @@ const studentMenus = [
 const teacherMenus = [
   { title: '首页', path: '/', children: [] },
   { title: '教学管理', children: [{ label: '我的教学班', path: '/teacher/classes', permission: 'teacher.teaching.classes' }], permission: 'teacher.menu.teaching' },
-  { title: '成绩管理', children: [{ label: '成绩录入', path: '/teacher/grades', permission: 'teacher.grades.entry' }, { label: '教学班治理', path: '/teacher/governance', permission: 'teacher.grades.governance' }], permission: 'teacher.menu.grades' }
+  { title: '成绩管理', children: [{ label: '成绩录入', path: '/teacher/grades', permission: 'teacher.grades.entry' }], permission: 'teacher.menu.grades' }
 ]
 
 const menuGroups = computed(() => {

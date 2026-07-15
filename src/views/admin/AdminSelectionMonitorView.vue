@@ -1,113 +1,142 @@
 <template>
   <div class="page">
     <div class="page-head">
-      <div>
-        <h1 class="page-title">抢课监控</h1>
-        <p class="page-subtitle">实时查看选课请求、教学班容量、候补队列和异常请求。</p>
-      </div>
-      <el-button type="primary" :loading="loading" @click="load">刷新</el-button>
+      <h1 class="page-title">抢课监控</h1>
+      <el-button type="primary" :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
 
-    <section class="plain-panel filter-panel">
-      <el-select v-model="roundId" clearable placeholder="全部轮次" style="width: 220px">
-        <el-option
-          v-for="round in rounds"
-          :key="round.round_id"
-          :label="`${round.academic_year} 第${round.semester}学期 ${round.round_name}`"
-          :value="round.round_id"
-        />
-      </el-select>
-      <el-select v-model="classStatus" clearable placeholder="全部状态" style="width: 160px">
-        <el-option label="开放" value="open" />
-        <el-option label="关闭" value="closed" />
-        <el-option label="草稿" value="draft" />
-      </el-select>
-      <el-input v-model="keyword" clearable placeholder="搜索课程 / 教学班 / 教师" style="width: 280px" />
-    </section>
+    <el-alert
+      v-if="!loading && !currentRound"
+      title="当前时间没有进行中的抢课轮次"
+      type="info"
+      show-icon
+      :closable="false"
+      class="round-empty"
+    />
 
-    <section class="metric-grid">
-      <div class="metric-card">
-        <span>请求总数</span>
-        <strong>{{ summary.total_requests || 0 }}</strong>
-      </div>
-      <div class="metric-card">
-        <span>成功选课</span>
-        <strong>{{ summary.success_count || 0 }}</strong>
-      </div>
-      <div class="metric-card">
-        <span>候补人数</span>
-        <strong>{{ summary.waitlist_count || 0 }}</strong>
-      </div>
-      <div class="metric-card danger">
-        <span>失败请求</span>
-        <strong>{{ summary.failed_count || 0 }}</strong>
-      </div>
-      <div class="metric-card warning">
-        <span>满员教学班</span>
-        <strong>{{ summary.full_class_count || 0 }}</strong>
-      </div>
-    </section>
-
-    <section class="analysis-grid">
-      <div class="plain-panel chart-panel">
-        <h2 class="section-title">请求状态分布</h2>
-        <div v-for="item in statusDistribution" :key="item.status" class="bar-row">
-          <span>{{ statusLabel(item.status) }}</span>
-          <div class="bar-track">
-            <div class="bar-fill" :style="{ width: barWidth(item.count, statusMax) }" />
-          </div>
-          <strong>{{ item.count }}</strong>
-        </div>
-      </div>
-
-      <div class="plain-panel chart-panel">
-        <h2 class="section-title">热门教学班 Top10</h2>
-        <div v-for="item in hotClasses" :key="item.teaching_class_id" class="rank-row">
-          <span>{{ item.class_code }} {{ item.course_name }}</span>
-          <strong>{{ item.selected_count }}</strong>
-        </div>
-      </div>
-
-      <div class="plain-panel chart-panel">
-        <h2 class="section-title">候补队列 Top10</h2>
-        <div v-for="item in waitlistTop" :key="item.teaching_class_id" class="rank-row">
-          <span>{{ item.class_code }} {{ item.course_name }}</span>
-          <strong>{{ item.waitlist_count }}</strong>
-        </div>
-      </div>
-    </section>
-
-    <section class="plain-panel">
-      <div class="table-head">
+    <section class="plain-panel monitor-panel">
+      <div class="section-head">
         <h2 class="section-title">教学班容量监控</h2>
-        <span class="muted">Redis 剩余容量当前按数据库容量实时折算，后续可接入 Redis 实时库存。</span>
+        <div class="section-tools">
+          <el-input
+            v-model="capacityKeyword"
+            clearable
+            placeholder="课程名称 / 学号"
+            @keyup.enter="searchCapacity"
+            @clear="searchCapacity"
+          />
+          <el-button :icon="Search" aria-label="搜索容量监控" @click="searchCapacity" />
+          <span class="section-count">{{ courseGroups.length }} 门课程</span>
+        </div>
       </div>
-      <el-table :data="filteredClasses" border height="520" v-loading="loading">
-        <el-table-column prop="class_code" label="教学班编号" width="130" />
-        <el-table-column prop="course_name" label="课程名称" min-width="170" />
-        <el-table-column prop="teacher_name" label="教师" width="110" />
-        <el-table-column prop="capacity" label="容量" width="90" />
-        <el-table-column prop="selected_count" label="已选" width="90" />
-        <el-table-column prop="remaining_count" label="剩余" width="90" />
-        <el-table-column prop="waitlist_count" label="候补" width="90" />
-        <el-table-column prop="redis_remaining" label="Redis剩余" width="120" />
-        <el-table-column label="状态" width="110">
+      <el-table
+        :data="pagedCourseGroups"
+        border
+        row-key="course_id"
+        v-loading="loading"
+        empty-text="当前轮次暂无教学班"
+      >
+        <el-table-column type="expand" width="52">
           <template #default="{ row }">
-            <el-tag :type="classState(row).type">{{ classState(row).text }}</el-tag>
+            <el-table :data="row.classes" border size="small" class="nested-class-table" empty-text="暂无教学班">
+              <el-table-column prop="class_code" label="教学班编号" width="130" />
+              <el-table-column prop="class_name" label="教学班名称" min-width="180" />
+              <el-table-column prop="teacher_name" label="任课教师" width="110" />
+              <el-table-column prop="capacity" label="容量" width="80" />
+              <el-table-column prop="selected_count" label="已选" width="80" />
+              <el-table-column prop="remaining_count" label="剩余" width="80" />
+              <el-table-column prop="waitlist_count" label="候补" width="80" />
+              <el-table-column label="状态" width="100">
+                <template #default="{ row: classRow }">
+                  <el-tag :type="classState(classRow).type" size="small">{{ classState(classRow).text }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" fixed="right" width="180">
+                <template #default="{ row: classRow }">
+                  <el-button link type="primary" @click="openDrawer(classRow, 'selections')">选课记录</el-button>
+                  <el-button link type="warning" @click="openDrawer(classRow, 'waitlist')">候补队列</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
           </template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="250">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDrawer(row, 'selections')">选课记录</el-button>
-            <el-button link type="warning" @click="openDrawer(row, 'waitlist')">候补列表</el-button>
-            <el-button link type="info" @click="openDrawer(row, 'logs')">请求日志</el-button>
-          </template>
+        <el-table-column prop="course_code" label="课程代码" width="140" />
+        <el-table-column prop="course_name" label="课程名称" min-width="220" />
+        <el-table-column prop="credit" label="学分" width="90" />
+        <el-table-column prop="hours" label="学时" width="90" />
+        <el-table-column label="教学班数" width="110">
+          <template #default="{ row }">{{ row.classes.length }}</template>
         </el-table-column>
       </el-table>
+      <el-pagination
+        v-model:current-page="coursePage"
+        v-model:page-size="coursePageSize"
+        class="monitor-pagination"
+        :page-sizes="[10, 20, 50]"
+        :total="courseGroups.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="coursePage = 1"
+      />
+    </section>
+
+    <section class="plain-panel monitor-panel">
+      <div class="section-head">
+        <h2 class="section-title">候补队列</h2>
+        <div class="section-tools">
+          <el-input
+            v-model="waitlistKeyword"
+            clearable
+            placeholder="课程名称 / 学号"
+            @keyup.enter="searchWaitlist"
+            @clear="searchWaitlist"
+          />
+          <el-button :icon="Search" aria-label="搜索候补队列" @click="searchWaitlist" />
+          <span class="section-count">{{ waitlistGroups.length }} 门课程</span>
+        </div>
+      </div>
+      <el-table
+        :data="pagedWaitlistGroups"
+        border
+        row-key="course_id"
+        v-loading="loading"
+        empty-text="当前轮次暂无候补队列"
+      >
+        <el-table-column type="expand" width="52">
+          <template #default="{ row }">
+            <el-table :data="row.classes" border size="small" class="nested-class-table" empty-text="暂无候补队列">
+              <el-table-column prop="class_code" label="教学班编号" width="130" />
+              <el-table-column prop="class_name" label="教学班名称" min-width="200" />
+              <el-table-column prop="teacher_name" label="任课教师" width="120" />
+              <el-table-column prop="waitlist_count" label="排队人数" width="100" />
+              <el-table-column label="操作" fixed="right" width="120">
+                <template #default="{ row: classRow }">
+                  <el-button link type="primary" @click="openDrawer(classRow, 'waitlist')">查看候补</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+        </el-table-column>
+        <el-table-column prop="course_code" label="课程代码" width="140" />
+        <el-table-column prop="course_name" label="课程名称" min-width="220" />
+        <el-table-column prop="credit" label="学分" width="90" />
+        <el-table-column prop="hours" label="学时" width="90" />
+        <el-table-column label="候补教学班数" width="140">
+          <template #default="{ row }">{{ row.classes.length }}</template>
+        </el-table-column>
+      </el-table>
+      <el-pagination
+        v-model:current-page="waitlistPage"
+        v-model:page-size="waitlistPageSize"
+        class="monitor-pagination"
+        :page-sizes="[10, 20, 50]"
+        :total="waitlistGroups.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="waitlistPage = 1"
+      />
     </section>
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="760px">
-      <el-table :data="drawerRows" border v-loading="drawerLoading">
+      <el-table :data="drawerRows" border v-loading="drawerLoading" empty-text="暂无记录">
         <template v-if="drawerType === 'selections'">
           <el-table-column prop="student_no" label="学号" width="130" />
           <el-table-column prop="student_name" label="姓名" width="110" />
@@ -117,19 +146,12 @@
           </el-table-column>
           <el-table-column prop="selected_at" label="选课时间" width="180" />
         </template>
-        <template v-else-if="drawerType === 'waitlist'">
+        <template v-else>
           <el-table-column prop="queue_no" label="排队序号" width="100" />
           <el-table-column prop="student_no" label="学号" width="130" />
           <el-table-column prop="student_name" label="姓名" width="110" />
           <el-table-column prop="admin_class_name" label="行政班" min-width="140" />
           <el-table-column prop="waited_at" label="候补时间" width="180" />
-        </template>
-        <template v-else>
-          <el-table-column prop="request_id" label="请求ID" min-width="170" />
-          <el-table-column prop="student_no" label="学号" width="130" />
-          <el-table-column prop="student_name" label="姓名" width="110" />
-          <el-table-column prop="request_status" label="请求状态" width="120" />
-          <el-table-column prop="mq_status" label="队列状态" width="120" />
         </template>
       </el-table>
     </el-drawer>
@@ -137,44 +159,52 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { apiGet } from '../../api/http'
+import { groupTeachingClasses, paginateItems } from '../../utils/courseClassHierarchy'
 
 const loading = ref(false)
 const overview = ref<Record<string, any>>({})
-const keyword = ref('')
-const classStatus = ref('')
-const roundId = ref<number | undefined>()
+const capacityKeyword = ref('')
+const waitlistKeyword = ref('')
+const coursePage = ref(1)
+const coursePageSize = ref(10)
+const waitlistPage = ref(1)
+const waitlistPageSize = ref(10)
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
 const drawerRows = ref<any[]>([])
-const drawerType = ref<'selections' | 'waitlist' | 'logs'>('selections')
+const drawerType = ref<'selections' | 'waitlist'>('selections')
 const activeClass = ref<Record<string, any> | null>(null)
 
-const summary = computed(() => overview.value.summary || {})
-const rounds = computed(() => overview.value.rounds || [])
-const classes = computed(() => overview.value.classes || [])
-const statusDistribution = computed(() => overview.value.statusDistribution || [])
-const hotClasses = computed(() => overview.value.hotClasses || [])
-const waitlistTop = computed(() => overview.value.waitlistTop || [])
-const statusMax = computed(() => Math.max(1, ...statusDistribution.value.map((item: any) => Number(item.count || 0))))
-const selectedRoundTermId = computed(() => rounds.value.find((item: any) => item.round_id === roundId.value)?.term_id)
-
-const filteredClasses = computed(() => {
-  const text = keyword.value.trim().toLowerCase()
-  return classes.value.filter((item: any) => {
-    const matchRound = !selectedRoundTermId.value || item.term_id === selectedRoundTermId.value
-    const matchStatus = !classStatus.value || item.status === classStatus.value
-    const merged = `${item.class_code || ''} ${item.class_name || ''} ${item.course_name || ''} ${item.teacher_name || ''}`.toLowerCase()
-    return matchRound && matchStatus && (!text || merged.includes(text))
-  })
-})
+const currentRound = computed(() => overview.value.round || null)
+const classes = computed<any[]>(() => overview.value.classes || [])
+const courseGroups = computed(() => groupTeachingClasses(
+  classes.value.filter((item) => Number(item.capacity_match) === 1)
+))
+const pagedCourseGroups = computed(() => paginateItems(courseGroups.value, coursePage.value, coursePageSize.value))
+const waitlistGroups = computed(() => groupTeachingClasses(
+  classes.value.filter((item) => Number(item.waitlist_count || 0) > 0 && Number(item.waitlist_match) === 1)
+))
+const pagedWaitlistGroups = computed(() => paginateItems(
+  waitlistGroups.value,
+  waitlistPage.value,
+  waitlistPageSize.value
+))
 
 const drawerTitle = computed(() => {
   const className = activeClass.value ? `${activeClass.value.class_code} ${activeClass.value.course_name}` : ''
-  const typeText = drawerType.value === 'selections' ? '选课记录' : drawerType.value === 'waitlist' ? '候补列表' : '请求日志'
+  const typeText = drawerType.value === 'selections' ? '选课记录' : '候补队列'
   return `${className} - ${typeText}`
+})
+
+watch([() => courseGroups.value.length, coursePageSize], ([total]) => {
+  coursePage.value = clampPage(coursePage.value, Number(total), coursePageSize.value)
+})
+watch([() => waitlistGroups.value.length, waitlistPageSize], ([total]) => {
+  waitlistPage.value = clampPage(waitlistPage.value, Number(total), waitlistPageSize.value)
 })
 
 onMounted(load)
@@ -182,7 +212,12 @@ onMounted(load)
 async function load() {
   loading.value = true
   try {
-    overview.value = await apiGet<Record<string, any>>('/admin/selection-monitor/overview')
+    overview.value = await apiGet<Record<string, any>>('/admin/selection-monitor/overview', {
+      capacityKeyword: capacityKeyword.value.trim(),
+      waitlistKeyword: waitlistKeyword.value.trim()
+    })
+    coursePage.value = 1
+    waitlistPage.value = 1
   } catch (error) {
     ElMessage.error((error as Error).message)
   } finally {
@@ -190,9 +225,20 @@ async function load() {
   }
 }
 
-async function openDrawer(row: Record<string, any>, type: 'selections' | 'waitlist' | 'logs') {
+function searchCapacity() {
+  coursePage.value = 1
+  load()
+}
+
+function searchWaitlist() {
+  waitlistPage.value = 1
+  load()
+}
+
+async function openDrawer(row: Record<string, any>, type: 'selections' | 'waitlist') {
   activeClass.value = row
   drawerType.value = type
+  drawerRows.value = []
   drawerVisible.value = true
   drawerLoading.value = true
   try {
@@ -213,6 +259,7 @@ function classState(row: Record<string, any>) {
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
+    processing: '处理中',
     selected: '已选',
     dropped: '已退课',
     waiting: '候补中',
@@ -224,137 +271,74 @@ function statusLabel(status: string) {
   return map[status] || status || '-'
 }
 
-function barWidth(count: number, max: number) {
-  return `${Math.max(6, Math.round((Number(count || 0) / max) * 100))}%`
+function clampPage(page: number, total: number, pageSize: number) {
+  return Math.min(page, Math.max(1, Math.ceil(total / pageSize)))
 }
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.page-subtitle {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.filter-panel {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.metric-card {
-  padding: 18px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.metric-card span {
-  display: block;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.metric-card strong {
-  display: block;
-  margin-top: 10px;
-  color: #111827;
-  font-size: 28px;
-}
-
-.metric-card.warning strong {
-  color: #d97706;
-}
-
-.metric-card.danger strong {
-  color: #dc2626;
-}
-
-.analysis-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.chart-panel {
-  min-height: 230px;
-}
-
-.bar-row,
-.rank-row {
-  display: grid;
-  grid-template-columns: 92px 1fr 54px;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
-  color: #334155;
-  font-size: 13px;
-}
-
-.rank-row {
-  grid-template-columns: 1fr 54px;
-}
-
-.bar-track {
-  height: 10px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e5e7eb;
-}
-
-.bar-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: #2563eb;
-}
-
-.table-head {
+.page-head,
+.section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.round-empty,
+.monitor-panel + .monitor-panel {
+  margin-top: 16px;
+}
+
+.section-head {
   margin-bottom: 12px;
 }
 
-.muted {
-  color: #64748b;
-  font-size: 13px;
+.section-title {
+  margin: 0;
 }
 
-@media (max-width: 1180px) {
-  .metric-grid,
-  .analysis-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.section-count {
+  color: #606266;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.section-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-tools .el-input {
+  width: 220px;
+}
+
+.nested-class-table {
+  margin: 8px 16px 12px;
+  width: calc(100% - 32px);
+}
+
+.monitor-pagination {
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 760px) {
   .page-head,
-  .filter-panel,
-  .table-head {
-    align-items: stretch;
+  .section-head {
+    align-items: flex-start;
     flex-direction: column;
   }
 
-  .metric-grid,
-  .analysis-grid {
-    grid-template-columns: 1fr;
+  .section-tools {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .monitor-pagination {
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 }
 </style>

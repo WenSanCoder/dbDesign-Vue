@@ -36,11 +36,42 @@
           <el-table-column prop="created_at" label="发布时间" width="180" />
         </el-table>
       </section>
+
+      <section v-if="isStudent" class="plain-panel class-notice-panel">
+        <div class="class-notice-heading">
+          <h2 class="section-title">教学班通知</h2>
+          <span v-if="unreadClassNoticeCount" class="unread-summary">{{ unreadClassNoticeCount }} 条未读</span>
+        </div>
+        <el-table
+          :data="classNotices"
+          border
+          height="280"
+          class="notice-table"
+          v-loading="classNoticeLoading"
+          empty-text="暂无教学班通知"
+          @row-click="openClassNotice"
+        >
+          <el-table-column label="状态" width="78">
+            <template #default="{ row }">
+              <el-tag v-if="!row.read_flag" type="danger" size="small">未读</el-tag>
+              <span v-else class="read-status">已读</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="标题" min-width="240">
+            <template #default="{ row }">
+              <span :class="{ 'important-notice-title': isImportantNotice(row) }">{{ row.title }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="publisher_name" label="发布教师" width="130" />
+          <el-table-column prop="created_at" label="发布时间" width="180" />
+        </el-table>
+      </section>
     </div>
 
     <el-dialog v-model="noticeDialogVisible" :title="selectedNotice?.title || '公告详情'" width="680px">
       <div v-if="selectedNotice" class="notice-detail">
         <div class="notice-meta">
+          <span v-if="selectedNotice.publisher_name">发布人：{{ selectedNotice.publisher_name }}</span>
           <span>{{ selectedNotice.created_at || '-' }}</span>
         </div>
         <div class="notice-content">
@@ -99,14 +130,17 @@ const data = ref<Record<string, any>>({})
 const noticeDialogVisible = ref(false)
 const profileDialogVisible = ref(false)
 const profileSaving = ref(false)
+const classNoticeLoading = ref(false)
 const profileTab = ref('basic')
 const profileAvatarPath = ref('')
 const profileForm = reactive({ phone: '', oldPassword: '', newPassword: '', confirmPassword: '' })
 const selectedNotice = ref<Record<string, any> | null>(null)
+const classNotices = ref<Record<string, any>[]>([])
 const isTeacher = computed(() => session.user?.role_code === 'TEACHER')
 const isStudent = computed(() => session.user?.role_code === 'STUDENT')
 const isManagementUser = computed(() => !isTeacher.value && !isStudent.value)
 const notices = computed(() => data.value.notices || [])
+const unreadClassNoticeCount = computed(() => classNotices.value.filter((row) => !row.read_flag).length)
 const noticeCacheKey = computed(() => `dashboard_notices_${session.user?.role_code || 'guest'}`)
 const avatarPath = computed(() => session.user?.avatar_path || data.value.profile?.avatar_path || '')
 const profileName = computed(() => {
@@ -181,6 +215,7 @@ async function load() {
     else next = await apiGet('/dashboard/admin')
     data.value = next
     persistNoticeCache(next.notices || [])
+    if (role === 'STUDENT') void loadClassNotices()
   } catch (error) {
     ElMessage.error((error as Error).message)
   }
@@ -284,6 +319,32 @@ function openNotice(row: Record<string, any>) {
   noticeDialogVisible.value = true
 }
 
+async function loadClassNotices() {
+  const studentId = session.user?.related_id
+  if (!studentId) return
+  classNoticeLoading.value = true
+  try {
+    classNotices.value = await apiGet(`/governance/students/${studentId}/notices`)
+  } catch (error) {
+    ElMessage.error((error as Error).message)
+  } finally {
+    classNoticeLoading.value = false
+  }
+}
+
+function openClassNotice(row: Record<string, any>) {
+  selectedNotice.value = row
+  noticeDialogVisible.value = true
+  if (row.read_flag) return
+  row.read_flag = true
+  const studentId = session.user?.related_id
+  if (!studentId) return
+  void apiPut(`/governance/students/${studentId}/notices/${row.notice_id}/read`).catch((error) => {
+    row.read_flag = false
+    ElMessage.error((error as Error).message)
+  })
+}
+
 function isImportantNotice(row: Record<string, any> | null) {
   return row?.notice_type === 'important'
 }
@@ -294,7 +355,7 @@ function isImportantNotice(row: Record<string, any> | null) {
   display: grid;
   grid-template-columns: minmax(300px, 420px) minmax(420px, 1fr);
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .section-title {
@@ -339,6 +400,27 @@ function isImportantNotice(row: Record<string, any> | null) {
 
 .notice-table :deep(.el-table__row) {
   cursor: pointer;
+}
+
+.class-notice-panel {
+  grid-column: 1 / -1;
+}
+
+.class-notice-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+}
+
+.unread-summary {
+  color: #f56c6c;
+  font-size: 13px;
+}
+
+.read-status {
+  color: #909399;
+  font-size: 13px;
 }
 
 .notice-meta {

@@ -98,7 +98,7 @@
 
       <el-table
         v-if="resource === 'teaching-classes'"
-        :data="teachingClassCourseGroups"
+        :data="pagedTeachingClassCourseGroups"
         border
         height="560"
         row-key="course_id"
@@ -213,6 +213,16 @@
         layout="total, sizes, prev, pager, next, jumper"
         @current-change="load()"
         @size-change="onResourcePageSizeChange"
+      />
+      <el-pagination
+        v-else-if="resource === 'teaching-classes'"
+        v-model:current-page="teachingClassCoursePage"
+        v-model:page-size="teachingClassCoursePageSize"
+        class="resource-pagination"
+        :page-sizes="[10, 20, 50]"
+        :total="teachingClassCourseGroups.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="teachingClassCoursePage = 1"
       />
     </section>
 
@@ -486,6 +496,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshLeft, Search } from '@element-plus/icons-vue'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../api/http'
 import AdminXlsxImportButton from '../../components/admin/AdminXlsxImportButton.vue'
+import { groupTeachingClasses, paginateItems } from '../../utils/courseClassHierarchy'
 
 interface FieldConfig {
   prop: string
@@ -568,6 +579,8 @@ const termSort = reactive({
 })
 const selectedTeachingClassTermId = ref<number | undefined>()
 const teachingClassCourseKeyword = ref('')
+const teachingClassCoursePage = ref(1)
+const teachingClassCoursePageSize = ref(10)
 const resourceKeyword = ref('')
 const resourcePage = ref(1)
 const resourcePageSize = ref(10)
@@ -940,7 +953,7 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'round_name', label: '轮次名称' },
       { prop: 'start_time', label: '开始时间', type: 'datetime' },
       { prop: 'end_time', label: '结束时间', type: 'datetime' },
-      { prop: 'status', label: '状态', type: 'select', optionsKey: 'roundStatus' },
+      { prop: 'status', label: '状态', type: 'select', optionsKey: 'roundManualStatus' },
       { prop: 'waitlist_enabled', label: '开启候补', type: 'boolean' }
     ]
   },
@@ -1053,6 +1066,10 @@ const staticOptions: Record<string, Array<{ label: string; value: any }>> = {
     { label: '手动关闭', value: 'closed' },
     { label: '结束', value: 'ended' }
   ],
+  roundManualStatus: [
+    { label: '手动开放', value: 'open' },
+    { label: '手动关闭', value: 'closed' }
+  ],
   weekdays: [
     { label: '星期一', value: 1 },
     { label: '星期二', value: 2 },
@@ -1130,30 +1147,13 @@ const teachingClassRows = computed(() => {
   return rows.value.filter((row) => Number(row.term_id) === Number(selectedTeachingClassTermId.value))
 })
 const teachingClassCourseGroups = computed(() => {
-  const keyword = teachingClassCourseKeyword.value.trim().toLowerCase()
-  const groupMap = new Map<number, any>()
-  teachingClassRows.value.forEach((row) => {
-    const courseId = Number(row.course_id)
-    if (!groupMap.has(courseId)) {
-      groupMap.set(courseId, {
-        course_id: courseId,
-        course_code: row.course_code,
-        course_name: row.course_name,
-        credit: row.credit,
-        hours: row.hours,
-        classes: []
-      })
-    }
-    groupMap.get(courseId).classes.push(row)
-  })
-  return Array.from(groupMap.values())
-    .filter((course) => {
-      if (!keyword) return true
-      return String(course.course_code || '').toLowerCase().includes(keyword)
-        || String(course.course_name || '').toLowerCase().includes(keyword)
-    })
-    .sort((a, b) => String(a.course_code || '').localeCompare(String(b.course_code || ''), 'zh-Hans-CN'))
+  return groupTeachingClasses(teachingClassRows.value, teachingClassCourseKeyword.value)
 })
+const pagedTeachingClassCourseGroups = computed(() => paginateItems(
+  teachingClassCourseGroups.value,
+  teachingClassCoursePage.value,
+  teachingClassCoursePageSize.value
+))
 const hierarchyGroupLabel = computed(() => {
   if (resource.value === 'majors') return '所属学院'
   if (resource.value === 'classrooms') return '所属教学楼'
@@ -1308,6 +1308,13 @@ watch(resource, () => {
   load()
 }, { immediate: true })
 watch(selectedPlanCategory, syncRequirementForm)
+watch([selectedTeachingClassTermId, teachingClassCourseKeyword], () => {
+  teachingClassCoursePage.value = 1
+})
+watch(() => teachingClassCourseGroups.value.length, (total) => {
+  const lastPage = Math.max(1, Math.ceil(total / teachingClassCoursePageSize.value))
+  if (teachingClassCoursePage.value > lastPage) teachingClassCoursePage.value = lastPage
+})
 watch(() => scheduleForm.campusId, () => {
   const validIds = new Set(filteredScheduleClassrooms.value.map((room) => Number(room.classroom_id)))
   scheduleSessions.value.forEach((session) => {
@@ -1544,7 +1551,9 @@ function displayValue(prop: string, value: any) {
   if (typeof value === 'boolean') return value ? '是' : '否'
 
   const field = config.value.fields.find((item) => item.prop === prop)
-  const optionKey = field?.optionsKey || optionKeyByColumn(prop)
+  const optionKey = resource.value === 'rounds' && prop === 'status'
+    ? 'roundStatus'
+    : field?.optionsKey || optionKeyByColumn(prop)
   const options = optionKey ? staticOptions[optionKey] : undefined
   const option = options?.find((item) => item.value === value)
   return option?.label || value
@@ -1697,6 +1706,9 @@ function openEdit(row: Record<string, any>) {
   }
   if (resource.value === 'admin-classes') {
     form.class_no = parseAdminClassNo(row.class_code) || 1
+  }
+  if (resource.value === 'rounds') {
+    form.status = row.status === 'closed' ? 'closed' : 'open'
   }
   dialogVisible.value = true
 }

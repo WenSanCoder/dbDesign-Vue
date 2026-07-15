@@ -14,15 +14,14 @@
           <el-input v-model="form.username" placeholder="请输入账号" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" show-password placeholder="请输入密码" />
+          <el-input
+            v-model="form.password"
+            type="password"
+            show-password
+            autocomplete="current-password"
+            placeholder="请输入密码"
+          />
         </el-form-item>
-        <el-alert
-          title="演示账号：admin、teacher1、student1；密码均为 123456"
-          type="info"
-          :show-icon="false"
-          :closable="false"
-          class="login-tip"
-        />
         <el-button type="primary" class="login-button" :loading="loading" @click="login">登录</el-button>
       </el-form>
     </div>
@@ -41,14 +40,21 @@ const router = useRouter()
 const session = useSessionStore()
 const loading = ref(false)
 const logoUrl = new URL('../../static/zjut.png', import.meta.url).href
-const form = reactive({ username: 'admin', password: '123456' })
+const lastLoginStorageKey = 'edu-system-last-login'
+const form = reactive(readLastLogin())
 const cachedAvatarUrl = computed(() => resolveAvatarUrl(getCachedAvatar(form.username)))
 const loginAvatarText = computed(() => (form.username || '用户').slice(0, 1).toUpperCase())
 
 async function login() {
   loading.value = true
   try {
-    const user = await apiPost<SessionUser>('/auth/login', form)
+    const credentials = {
+      username: form.username.trim(),
+      password: form.password
+    }
+    const user = await apiPost<SessionUser>('/auth/login', credentials)
+    form.username = credentials.username
+    localStorage.setItem(lastLoginStorageKey, JSON.stringify(credentials))
     session.setUser(user)
     router.push('/')
   } catch (error) {
@@ -58,6 +64,17 @@ async function login() {
   }
 }
 
+function readLastLogin() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(lastLoginStorageKey) || 'null') as Record<string, unknown> | null
+    return {
+      username: typeof cached?.username === 'string' ? cached.username : '',
+      password: typeof cached?.password === 'string' ? cached.password : ''
+    }
+  } catch {
+    return { username: '', password: '' }
+  }
+}
 </script>
 
 <style scoped>
@@ -105,10 +122,6 @@ async function login() {
   margin: 0 0 22px;
   font-size: 22px;
   font-weight: 600;
-}
-
-.login-tip {
-  margin-bottom: 16px;
 }
 
 .login-button {
