@@ -8,7 +8,7 @@
     </button>
     <input ref="fileInput" class="file-input" type="file" accept="image/png,image/jpeg,image/webp" @change="onFileChange" />
 
-    <el-dialog v-model="dialogVisible" title="裁剪头像" width="520px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" title="裁剪头像" width="520px" destroy-on-close append-to-body>
       <div class="cropper-layout">
         <canvas ref="canvasRef" class="crop-canvas" width="256" height="256"></canvas>
         <div class="crop-controls">

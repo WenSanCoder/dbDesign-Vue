@@ -55,36 +55,45 @@ const adminMenus = [
   {
     title: '信息维护',
     children: [
-      { label: '校区维护', path: '/admin/campuses' },
-      { label: '学院管理', path: '/admin/colleges' },
-      { label: '专业管理', path: '/admin/majors' },
-      { label: '学年学期维护', path: '/admin/terms' },
-      { label: '入学年级维护', path: '/admin/grade-years' },
-      { label: '教学楼维护', path: '/admin/buildings' },
-      { label: '教室维护', path: '/admin/classrooms' },
-      { label: '教室占用查询', path: '/admin/room-schedules' },
-      { label: '行政班管理', path: '/admin/admin-classes' },
-      { label: '学生管理', path: '/admin/students' },
-      { label: '教师管理', path: '/admin/teachers' },
-      { label: '公告发布', path: '/admin/notices' }
-    ]
+      { label: '校区维护', path: '/admin/campuses', permission: 'admin.info.campuses' },
+      { label: '学院管理', path: '/admin/colleges', permission: 'admin.info.colleges' },
+      { label: '专业管理', path: '/admin/majors', permission: 'admin.info.majors' },
+      { label: '学年学期维护', path: '/admin/terms', permission: 'admin.info.terms' },
+      { label: '入学年级维护', path: '/admin/grade-years', permission: 'admin.info.grade-years' },
+      { label: '教学楼维护', path: '/admin/buildings', permission: 'admin.info.buildings' },
+      { label: '教室维护', path: '/admin/classrooms', permission: 'admin.info.classrooms' },
+      { label: '教室占用查询', path: '/admin/room-schedules', permission: 'admin.info.room-schedules' },
+      { label: '行政班管理', path: '/admin/admin-classes', permission: 'admin.info.admin-classes' },
+      { label: '学生管理', path: '/admin/students', permission: 'admin.info.students' },
+      { label: '教师管理', path: '/admin/teachers', permission: 'admin.info.teachers' },
+      { label: '公告发布', path: '/admin/notices', permission: 'admin.info.notices' },
+      { label: '用户管理', path: '/admin/user-management', permission: 'admin.info.users' }
+    ], permission: 'admin.menu.info'
   },
   {
     title: '教学资源',
     children: [
-      { label: '课程目录', path: '/admin/courses' },
-      { label: '培养方案课程', path: '/admin/teaching-plans' },
-      { label: '最低学分要求', path: '/admin/training-requirements' },
-      { label: '教学班管理', path: '/admin/teaching-classes' }
-    ]
+      { label: '课程目录', path: '/admin/courses', permission: 'admin.resources.courses' },
+      { label: '教学班管理', path: '/admin/teaching-classes', permission: 'admin.resources.teaching-classes' },
+      { label: '选课规则', path: '/admin/selection-rules', permission: 'admin.resources.selection-rules' }
+    ], permission: 'admin.menu.resources'
+  },
+  {
+    title: '审批中心',
+    children: [
+      { label: '培养方案调整', path: '/admin/approvals/plan-adjustments', permission: 'admin.approvals.plan-adjustments' },
+      { label: '转专业/转班', path: '/admin/approvals/program-changes', permission: 'admin.approvals.program-changes' },
+      { label: '成绩审批', path: '/admin/approvals/grade-approvals', permission: 'admin.approvals.grade-approvals' }
+    ], permission: 'admin.menu.approvals'
   },
   {
     title: '选课管理',
     children: [
-      { label: '选课轮次', path: '/admin/rounds' },
-      { label: '抢课监控', path: '/admin/selection-monitor' }
-    ]
-  }
+      { label: '选课轮次', path: '/admin/rounds', permission: 'admin.selection.rounds' },
+      { label: '抢课监控', path: '/admin/selection-monitor', permission: 'admin.selection.monitor' }
+    ], permission: 'admin.menu.selection'
+  },
+  { title: '成绩查询', path: '/admin/grade-query', children: [], permission: 'admin.menu.grade-query' }
 ]
 
 const studentMenus = [
@@ -92,24 +101,33 @@ const studentMenus = [
   {
     title: '选课',
     children: [
-      { label: '抢课选课', path: '/student/select' },
-      { label: '我的选课', path: '/student/selections' }
-    ]
+      { label: '抢课选课', path: '/student/select', permission: 'student.selection.select' },
+      { label: '我的选课', path: '/student/selections', permission: 'student.selection.records' }
+    ], permission: 'student.menu.selection'
   },
-  { title: '课表查询', children: [{ label: '我的课表', path: '/student/schedule' }] },
-  { title: '信息查询', children: [{ label: '我的成绩', path: '/student/grades' }, { label: '培养计划', path: '/student/training-plan' }] }
+  { title: '课表查询', children: [{ label: '我的课表', path: '/student/schedule', permission: 'student.schedule.mine' }], permission: 'student.menu.schedule' },
+  { title: '信息查询', children: [{ label: '我的成绩', path: '/student/grades', permission: 'student.info.grades' }, { label: '培养计划', path: '/student/training-plan', permission: 'student.info.training-plan' }, { label: '我的教务申请', path: '/student/governance', permission: 'student.info.governance' }], permission: 'student.menu.info' }
 ]
 
 const teacherMenus = [
   { title: '首页', path: '/', children: [] },
-  { title: '教学管理', children: [{ label: '我的教学班', path: '/teacher/classes' }] },
-  { title: '成绩管理', children: [{ label: '成绩录入', path: '/teacher/grades' }] }
+  { title: '教学管理', children: [{ label: '我的教学班', path: '/teacher/classes', permission: 'teacher.teaching.classes' }], permission: 'teacher.menu.teaching' },
+  { title: '成绩管理', children: [{ label: '成绩录入', path: '/teacher/grades', permission: 'teacher.grades.entry' }, { label: '教学班治理', path: '/teacher/governance', permission: 'teacher.grades.governance' }], permission: 'teacher.menu.grades' }
 ]
 
 const menuGroups = computed(() => {
-  if (session.user?.role_code === 'ADMIN') return adminMenus
-  if (session.user?.role_code === 'TEACHER') return teacherMenus
-  return studentMenus
+  const codes = session.user?.permission_codes || []
+  const hasConfiguredMenus = codes.some((code) => code.includes('.menu.'))
+  if (!hasConfiguredMenus) {
+    if (session.user?.role_code === 'TEACHER') return teacherMenus
+    if (session.user?.role_code === 'STUDENT') return studentMenus
+    return session.user?.role_code === 'ADMIN' ? adminMenus : adminMenus.slice(0, 1)
+  }
+  const allMenus = [adminMenus[0], ...adminMenus.slice(1), ...teacherMenus.slice(1), ...studentMenus.slice(1)]
+  return allMenus
+    .filter((group) => !group.permission || codes.includes(group.permission))
+    .map((group) => ({ ...group, children: group.children.filter((item) => !item.permission || codes.includes(item.permission)) }))
+    .filter((group) => group.path || group.children.length)
 })
 
 const greetingText = computed(() => {

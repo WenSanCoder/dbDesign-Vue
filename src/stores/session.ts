@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { cacheAvatar } from '../utils/avatar'
 
-export type RoleCode = 'ADMIN' | 'TEACHER' | 'STUDENT'
+export type RoleCode = string
 
 export interface SessionUser {
   user_id: number
@@ -10,6 +10,8 @@ export interface SessionUser {
   display_name: string
   related_id: number | null
   avatar_path?: string | null
+  permission_codes?: string[]
+  assigned_roles?: Array<{ role_code: string; role_name: string; is_system: boolean }>
   token: string
 }
 

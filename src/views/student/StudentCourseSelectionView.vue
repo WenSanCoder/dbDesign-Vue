@@ -80,6 +80,14 @@
             <el-tag v-else>可选</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="选课提示" min-width="180">
+          <template #default="{ row }">
+            <el-tag v-if="row.selection_limit_warning" type="warning">
+              已达建议上限 {{ row.selection_max_courses_per_term }} 门
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
       </el-table>
     </section>
   </div>
@@ -177,11 +185,15 @@ async function handleAction(course: any, row: any) {
 
 async function select(row: any) {
   try {
-    await apiPost(`/student/${studentId}/select`, {
+    const result = await apiPost<{ selectionLimitWarning?: boolean; selectedCourseCount?: number; maxCoursesPerTerm?: number }>(`/student/${studentId}/select`, {
       teachingClassId: row.teaching_class_id,
       roundId: row.round_id
     })
-    ElMessage.success('选课成功')
+    if (result.selectionLimitWarning) {
+      ElMessage.warning(`选课成功：你本学期已选 ${result.selectedCourseCount} 门，已达到建议上限 ${result.maxCoursesPerTerm} 门；系统不会阻止继续选课。`)
+    } else {
+      ElMessage.success('选课成功')
+    }
     await load()
   } catch (error) {
     await showBusinessError(error)

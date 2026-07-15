@@ -14,41 +14,64 @@
           <el-option label="第3学期" :value="3" />
         </el-select>
         <span>教学班</span>
-        <el-select v-model="selectedClassId" placeholder="请选择教学班" style="width: 280px" @change="loadGrades">
+        <el-select v-model="selectedClassId" placeholder="请选择教学班" style="width: 280px" @change="onClassChange">
           <el-option v-for="item in classes" :key="item.teaching_class_id" :label="classLabel(item)" :value="item.teaching_class_id" />
         </el-select>
-        <el-button type="primary" :disabled="!selectedClassId" @click="save(false)">保存草稿</el-button>
-        <el-button type="success" :disabled="!selectedClassId" @click="save(true)">提交成绩</el-button>
+        <el-button type="primary" :disabled="!selectedClassId || gradeLocked" @click="save(false)">保存草稿</el-button>
+        <el-button type="success" :disabled="!selectedClassId || gradeLocked" @click="save(true)">提交审批</el-button>
         <el-button :disabled="!selectedClassId" @click="loadStats">成绩统计</el-button>
+        <el-tag v-if="selectedClass?.grade_batch_status" :type="batchStatusType(selectedClass.grade_batch_status)">{{ batchStatusLabel(selectedClass.grade_batch_status) }}</el-tag>
       </div>
       <div class="weight-row">
         <span>成绩占比</span>
-        <el-input-number v-model="usualWeight" :min="0" :max="100" :step="5" controls-position="right" @change="syncExamWeight" />
+        <el-input-number v-model="usualWeight" :min="0" :max="100" :step="5" controls-position="right" :disabled="gradeLocked" @change="syncExamWeight" />
         <span>平时分 %</span>
-        <el-input-number v-model="examWeight" :min="0" :max="100" :step="5" controls-position="right" @change="syncUsualWeight" />
+        <el-input-number v-model="examWeight" :min="0" :max="100" :step="5" controls-position="right" :disabled="gradeLocked" @change="syncUsualWeight" />
         <span>考试分 %</span>
         <el-tag :type="weightValid ? 'success' : 'danger'">合计 {{ weightTotal }}%</el-tag>
       </div>
     </section>
     <section class="plain-panel">
-      <el-table :data="grades" border>
+      <div class="grade-toolbar">
+        <el-input
+          v-model="gradeKeyword"
+          clearable
+          placeholder="按姓名或学号检索"
+          style="width: 260px"
+          @keyup.enter="searchGrades"
+          @clear="searchGrades"
+        />
+        <el-button type="primary" :disabled="!selectedClassId" @click="searchGrades">查询</el-button>
+      </div>
+      <el-table :data="grades" border v-loading="gradeLoading">
         <el-table-column prop="student_no" label="学号" width="120" />
         <el-table-column prop="student_name" label="姓名" width="100" />
         <el-table-column prop="admin_class_name" label="行政班" width="120" />
         <el-table-column label="平时分" width="150">
-          <template #default="{ row }"><el-input v-model="row.usual_score" inputmode="decimal" placeholder="请输入" /></template>
+          <template #default="{ row }"><el-input v-model="row.usual_score" inputmode="decimal" placeholder="请输入" :disabled="gradeLocked" /></template>
         </el-table-column>
         <el-table-column label="考试分" width="150">
-          <template #default="{ row }"><el-input v-model="row.exam_score" inputmode="decimal" placeholder="请输入" /></template>
+          <template #default="{ row }"><el-input v-model="row.exam_score" inputmode="decimal" placeholder="请输入" :disabled="gradeLocked" /></template>
         </el-table-column>
         <el-table-column label="总评" width="100">
           <template #default="{ row }">{{ calcFinal(row) }}</template>
         </el-table-column>
         <el-table-column prop="grade_point" label="绩点" width="90" />
         <el-table-column label="备注" min-width="150">
-          <template #default="{ row }"><el-input v-model="row.remark" placeholder="请输入" /></template>
+          <template #default="{ row }"><el-input v-model="row.remark" placeholder="请输入" :disabled="gradeLocked" /></template>
         </el-table-column>
       </el-table>
+      <div class="pagination-row">
+        <el-pagination
+          v-model:current-page="gradePage"
+          v-model:page-size="gradePageSize"
+          :total="gradeTotal"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="loadGrades"
+          @current-change="loadGrades"
+        />
+      </div>
     </section>
 
     <section v-if="stats" class="plain-panel">
@@ -88,12 +111,19 @@ const selectedClassId = ref<number | null>(route.query.classId ? Number(route.qu
 const stats = ref<any>(null)
 const usualWeight = ref(30)
 const examWeight = ref(70)
+const gradeLoading = ref(false)
+const gradeKeyword = ref('')
+const gradePage = ref(1)
+const gradePageSize = ref(10)
+const gradeTotal = ref(0)
 const filters = reactive({
   academicYear: '',
   semester: undefined as number | undefined
 })
 
 const academicYears = computed(() => Array.from(new Set(terms.value.map((item) => item.academic_year))).filter(Boolean))
+const selectedClass = computed(() => classes.value.find((item) => item.teaching_class_id === selectedClassId.value))
+const gradeLocked = computed(() => ['submitted', 'approved'].includes(selectedClass.value?.grade_batch_status))
 
 onMounted(async () => {
   await loadLookups()
@@ -128,7 +158,17 @@ async function onTermFilterChange() {
   selectedClassId.value = null
   grades.value = []
   stats.value = null
+  gradeKeyword.value = ''
+  gradePage.value = 1
+  gradeTotal.value = 0
   await loadClasses()
+}
+
+async function onClassChange() {
+  gradePage.value = 1
+  grades.value = []
+  stats.value = null
+  await loadGrades()
 }
 
 function classLabel(item: any) {
@@ -168,15 +208,29 @@ function parseDate(value: string | undefined) {
 
 async function loadGrades() {
   if (!selectedClassId.value) return
+  gradeLoading.value = true
   try {
-    grades.value = await apiGet(`/teacher/${teacherId}/classes/${selectedClassId.value}/grades`)
+    const page = await apiGet<any>(`/teacher/${teacherId}/classes/${selectedClassId.value}/grades`, {
+      keyword: gradeKeyword.value || undefined,
+      page: gradePage.value,
+      pageSize: gradePageSize.value
+    })
+    grades.value = page.records || []
+    gradeTotal.value = Number(page.total || 0)
     const firstGrade = grades.value.find((row) => row.usual_weight !== undefined && row.exam_weight !== undefined)
     usualWeight.value = Number(firstGrade?.usual_weight ?? 30)
     examWeight.value = Number(firstGrade?.exam_weight ?? 70)
     stats.value = null
   } catch (error) {
     ElMessage.error((error as Error).message)
+  } finally {
+    gradeLoading.value = false
   }
+}
+
+async function searchGrades() {
+  gradePage.value = 1
+  await loadGrades()
 }
 
 const weightTotal = computed(() => Number(usualWeight.value || 0) + Number(examWeight.value || 0))
@@ -205,7 +259,7 @@ async function save(submit: boolean) {
       ElMessage.error('平时分和考试分占比之和必须为 100%')
       return
     }
-    if (submit) await ElMessageBox.confirm('提交后学生端可查询成绩，确定提交吗？', '提交确认', { type: 'warning' })
+    if (submit) await ElMessageBox.confirm('提交后进入管理员审批，审批通过前学生不可查询且成绩暂不计入学分。确定提交吗？', '提交确认', { type: 'warning' })
     const body = {
       grades: grades.value.map((row) => ({
         selectionId: row.selection_id,
@@ -220,12 +274,14 @@ async function save(submit: boolean) {
       ? `/teacher/${teacherId}/classes/${selectedClassId.value}/grades/submit`
       : `/teacher/${teacherId}/classes/${selectedClassId.value}/grades`
     await apiPost(url, body)
-    ElMessage.success(submit ? '成绩已提交' : '草稿已保存')
-    await loadGrades()
+    ElMessage.success(submit ? '成绩已提交审批' : '草稿已保存')
+    if (submit) await loadClasses(); else await loadGrades()
   } catch (error) {
     if (error instanceof Error) ElMessage.error(error.message)
   }
 }
+function batchStatusLabel(value:string) { return ({ submitted:'待审批', approved:'已通过并锁定', returned:'已退回修改', cancelled:'已取消' } as Record<string,string>)[value] || value }
+function batchStatusType(value:string) { return value === 'approved' ? 'success' : value === 'submitted' ? 'warning' : value === 'returned' ? 'danger' : 'info' }
 
 async function loadStats() {
   if (!selectedClassId.value) return
@@ -249,5 +305,18 @@ async function loadStats() {
   gap: 8px;
   margin-top: 12px;
   color: #606266;
+}
+
+.grade-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.pagination-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 </style>

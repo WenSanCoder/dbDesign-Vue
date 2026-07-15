@@ -8,9 +8,10 @@
         <el-table-column prop="class_name" label="教学班" min-width="160" />
         <el-table-column prop="teacher_name" label="任课教师" width="110" />
         <el-table-column prop="credit" label="学分" width="80" />
-        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column label="状态" width="100">
+          <template #default><el-tag type="success">已选</el-tag></template>
+        </el-table-column>
         <el-table-column prop="selected_at" label="选课时间" width="180" />
-        <el-table-column prop="dropped_at" label="退课时间" width="180" />
       </el-table>
     </section>
   </div>

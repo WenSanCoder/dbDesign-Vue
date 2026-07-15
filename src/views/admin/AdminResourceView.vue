@@ -5,7 +5,78 @@
     <section class="plain-panel">
       <div class="toolbar">
         <el-button type="primary" @click="openCreate">新增</el-button>
-        <el-button @click="load">刷新</el-button>
+        <el-button @click="load(true)">刷新</el-button>
+        <AdminXlsxImportButton v-if="batchImportType" :import-type="batchImportType" @imported="load(true)" />
+        <div v-if="isPagedResource" class="resource-search-controls">
+          <el-input
+            v-model="resourceKeyword"
+            clearable
+            size="small"
+            :placeholder="resourceSearchPlaceholder"
+            style="width: 220px"
+            @keyup.enter="searchResources"
+            @clear="searchResources"
+          />
+          <el-select
+            v-if="showCampusSearch"
+            v-model="resourceFilters.campusId"
+            clearable
+            filterable
+            size="small"
+            placeholder="选择校区"
+            style="width: 150px"
+            @change="onSearchCampusChange"
+          >
+            <el-option v-for="item in lookups.campuses || []" :key="item.campus_id" :label="item.campus_name" :value="item.campus_id" />
+          </el-select>
+          <el-select
+            v-if="showCollegeSearch"
+            v-model="resourceFilters.collegeId"
+            clearable
+            filterable
+            size="small"
+            placeholder="选择学院"
+            style="width: 180px"
+            @change="onSearchCollegeChange"
+          >
+            <el-option v-for="item in searchCollegeOptions" :key="item.college_id" :label="item.college_name" :value="item.college_id" />
+          </el-select>
+          <el-select
+            v-if="resource === 'admin-classes'"
+            v-model="resourceFilters.majorId"
+            clearable
+            filterable
+            size="small"
+            placeholder="选择专业"
+            style="width: 190px"
+          >
+            <el-option v-for="item in searchMajorOptions" :key="item.major_id" :label="item.major_name" :value="item.major_id" />
+          </el-select>
+          <el-select
+            v-if="resource === 'admin-classes'"
+            v-model="resourceFilters.gradeYear"
+            clearable
+            filterable
+            size="small"
+            placeholder="选择年级"
+            style="width: 130px"
+          >
+            <el-option v-for="item in lookups.gradeYears || []" :key="item.grade_year" :label="`${item.grade_year}级`" :value="item.grade_year" />
+          </el-select>
+          <el-select
+            v-if="resource === 'classrooms'"
+            v-model="resourceFilters.buildingId"
+            clearable
+            filterable
+            size="small"
+            placeholder="选择教学楼"
+            style="width: 170px"
+          >
+            <el-option v-for="item in searchBuildingOptions" :key="item.building_id" :label="item.building_name" :value="item.building_id" />
+          </el-select>
+          <el-button :icon="Search" size="small" type="primary" @click="searchResources">查找</el-button>
+          <el-button :icon="RefreshLeft" size="small" @click="resetResourceSearch">重置</el-button>
+        </div>
         <div v-if="resource === 'teaching-classes'" class="term-sort-controls">
           <el-input v-model="teachingClassCourseKeyword" clearable size="small" placeholder="搜索课程" style="width: 220px" />
           <span class="toolbar-label">学期</span>
@@ -69,6 +140,45 @@
         </el-table-column>
       </el-table>
 
+      <el-table
+        v-else-if="isHierarchyResource"
+        :data="hierarchyGroups"
+        border
+        height="560"
+        row-key="group_id"
+        v-loading="loading"
+        empty-text="无相关数据"
+      >
+        <el-table-column type="expand" width="52">
+          <template #default="{ row: group }">
+            <el-table :data="group.records" border size="small" empty-text="无相关数据" class="nested-class-table">
+              <el-table-column
+                v-for="column in config.columns"
+                :key="column.prop"
+                :prop="column.prop"
+                :label="column.label"
+                :width="column.width"
+                min-width="130"
+              >
+                <template #default="{ row }">{{ displayValue(column.prop, row[column.prop]) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" fixed="right" :width="operationColumnWidth">
+                <template #default="{ row }">
+                  <el-button v-if="resource === 'majors'" link type="primary" @click="openMajorPlan(row)">培养方案</el-button>
+                  <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+                  <el-button link type="danger" @click="remove(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+        </el-table-column>
+        <el-table-column prop="group_label" :label="hierarchyGroupLabel" min-width="240" />
+        <el-table-column prop="group_detail" label="上级范围" min-width="180" />
+        <el-table-column label="记录数" width="100">
+          <template #default="{ row }">{{ row.records.length }}</template>
+        </el-table-column>
+      </el-table>
+
       <el-table v-else :data="displayRows" border height="560" v-loading="loading" empty-text="无相关数据">
         <el-table-column
           v-for="column in config.columns"
@@ -92,6 +202,18 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination
+        v-if="isPagedResource"
+        v-model:current-page="resourcePage"
+        v-model:page-size="resourcePageSize"
+        class="resource-pagination"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="resourceTotal"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="load()"
+        @size-change="onResourcePageSizeChange"
+      />
     </section>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑' : '新增'" width="640px">
@@ -131,6 +253,14 @@
             </el-form-item>
             <el-form-item label="学期">
               <el-input :model-value="selectedTeachingClassTermLabel" disabled />
+            </el-form-item>
+          </template>
+          <template v-if="resource === 'admin-classes' && field.prop === 'class_no'">
+            <el-form-item label="班级编码">
+              <el-input :model-value="generatedAdminClassCode" disabled />
+            </el-form-item>
+            <el-form-item label="班级名称">
+              <el-input :model-value="generatedAdminClassName" disabled />
             </el-form-item>
           </template>
         </template>
@@ -350,10 +480,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { RefreshLeft, Search } from '@element-plus/icons-vue'
 import { apiDelete, apiGet, apiPost, apiPut } from '../../api/http'
+import AdminXlsxImportButton from '../../components/admin/AdminXlsxImportButton.vue'
 
 interface FieldConfig {
   prop: string
@@ -370,7 +502,17 @@ interface ResourceConfig {
   fields: FieldConfig[]
 }
 
+interface PageResult<T> {
+  records: T[]
+  total: number
+  page: number
+  pageSize: number
+}
+
 type SortDirection = 'asc' | 'desc'
+
+const pagedResourceCache = new Map<string, PageResult<any>>()
+const lookupCache = new Map<string, Record<string, any[]>>()
 
 const courseTypeOptions = [
   { label: '先修课程', value: 'prerequisite' },
@@ -426,6 +568,17 @@ const termSort = reactive({
 })
 const selectedTeachingClassTermId = ref<number | undefined>()
 const teachingClassCourseKeyword = ref('')
+const resourceKeyword = ref('')
+const resourcePage = ref(1)
+const resourcePageSize = ref(10)
+const resourceTotal = ref(0)
+const resourceFilters = reactive({
+  campusId: undefined as number | undefined,
+  collegeId: undefined as number | undefined,
+  majorId: undefined as number | undefined,
+  buildingId: undefined as number | undefined,
+  gradeYear: undefined as number | undefined
+})
 const scheduleDialogVisible = ref(false)
 const scheduleLoading = ref(false)
 const scheduleSaving = ref(false)
@@ -443,6 +596,7 @@ const defaultClassLoading = ref(false)
 const defaultClassSaving = ref(false)
 const defaultClassTarget = ref<any>(null)
 const defaultClassAssignments = ref<any[]>([])
+const allDefaultClassAssignments = ref<any[]>([])
 const defaultAdminClassId = ref<number | undefined>()
 
 const planDialogVisible = ref(false)
@@ -530,11 +684,10 @@ const configs: Record<string, ResourceConfig> = {
       { prop: 'status', label: '状态' }
     ],
     fields: [
-      { prop: 'class_code', label: '班级编码' },
-      { prop: 'class_name', label: '班级名称' },
       { prop: 'college_id', label: '学院', type: 'select', optionsKey: 'colleges', uiOnly: true },
       { prop: 'major_id', label: '专业', type: 'select', optionsKey: 'majors' },
       { prop: 'grade_year', label: '年级', type: 'select', optionsKey: 'gradeYears' },
+      { prop: 'class_no', label: '班号', type: 'number', uiOnly: true },
       { prop: 'head_teacher_id', label: '班主任', type: 'select', optionsKey: 'teachers' },
       { prop: 'status', label: '状态', type: 'select', optionsKey: 'status' }
     ]
@@ -857,8 +1010,8 @@ const staticOptions: Record<string, Array<{ label: string; value: any }>> = {
     { label: '停用', value: 'disabled' }
   ],
   gender: [
-    { label: '男', value: 'male' },
-    { label: '女', value: 'female' }
+    { label: '男', value: '男' },
+    { label: '女', value: '女' }
   ],
   studentStatus: [
     { label: '在读', value: 'active' },
@@ -897,6 +1050,7 @@ const staticOptions: Record<string, Array<{ label: string; value: any }>> = {
   roundStatus: [
     { label: '未开始', value: 'not_started' },
     { label: '开放', value: 'open' },
+    { label: '手动关闭', value: 'closed' },
     { label: '结束', value: 'ended' }
   ],
   weekdays: [
@@ -925,10 +1079,36 @@ const staticOptions: Record<string, Array<{ label: string; value: any }>> = {
 }
 
 const resource = computed(() => String(route.params.resource || 'colleges'))
+const pagedResources = new Set(['colleges', 'majors', 'admin-classes', 'students', 'teachers', 'notices', 'courses', 'buildings', 'classrooms'])
+const hierarchyResources = new Set(['colleges', 'majors', 'admin-classes'])
 configs.students.columns.splice(4, 0, { prop: 'grade_year', label: '入学年级' })
 configs.students.fields.splice(6, 0, { prop: 'grade_year', label: '入学年级', type: 'select', optionsKey: 'gradeYears' })
 
 const config = computed(() => configs[resource.value] || configs.colleges)
+const batchImportType = computed(() => ['admin-classes', 'buildings', 'teaching-classes'].includes(resource.value) ? resource.value : '')
+const isPagedResource = computed(() => pagedResources.has(resource.value))
+const isHierarchyResource = computed(() => hierarchyResources.has(resource.value))
+const showCampusSearch = computed(() => ['colleges', 'majors', 'buildings', 'classrooms'].includes(resource.value))
+const showCollegeSearch = computed(() => ['majors', 'admin-classes', 'courses'].includes(resource.value))
+const resourceSearchPlaceholder = computed(() => {
+  if (resource.value === 'students') return '学号 / 姓名'
+  if (resource.value === 'teachers') return '工号 / 姓名'
+  if (resource.value === 'courses') return '课程名称 / 课程代码'
+  if (resource.value === 'notices') return '公告标题 / 发布人'
+  return '输入名称或编码'
+})
+const searchCollegeOptions = computed(() => {
+  const campusId = Number(resourceFilters.campusId || 0)
+  return (lookups.value.colleges || []).filter((item) => !campusId || Number(item.campus_id) === campusId)
+})
+const searchMajorOptions = computed(() => {
+  const collegeId = Number(resourceFilters.collegeId || 0)
+  return (lookups.value.majors || []).filter((item) => !collegeId || Number(item.college_id) === collegeId)
+})
+const searchBuildingOptions = computed(() => {
+  const campusId = Number(resourceFilters.campusId || 0)
+  return (lookups.value.buildings || []).filter((item) => !campusId || Number(item.campus_id) === campusId)
+})
 const visibleFields = computed(() => config.value.fields)
 const operationColumnWidth = computed(() => resource.value === 'majors' ? 220 : resource.value === 'teaching-classes' ? 190 : 150)
 const termSortOptions = [
@@ -974,6 +1154,28 @@ const teachingClassCourseGroups = computed(() => {
     })
     .sort((a, b) => String(a.course_code || '').localeCompare(String(b.course_code || ''), 'zh-Hans-CN'))
 })
+const hierarchyGroupLabel = computed(() => {
+  if (resource.value === 'majors') return '所属学院'
+  if (resource.value === 'classrooms') return '所属教学楼'
+  if (resource.value === 'admin-classes') return '所属专业'
+  return '所属校区'
+})
+const hierarchyGroups = computed(() => {
+  const groups = new Map<string, any>()
+  rows.value.forEach((row) => {
+    const metadata = hierarchyMetadata(row)
+    if (!groups.has(metadata.id)) {
+      groups.set(metadata.id, {
+        group_id: metadata.id,
+        group_label: metadata.label,
+        group_detail: metadata.detail,
+        records: []
+      })
+    }
+    groups.get(metadata.id).records.push(row)
+  })
+  return Array.from(groups.values())
+})
 const generatedTeachingClassName = computed(() => {
   if (resource.value !== 'teaching-classes') return ''
   const course = (lookups.value.courses || []).find((item) => Number(item.course_id) === Number(form.course_id))
@@ -981,6 +1183,28 @@ const generatedTeachingClassName = computed(() => {
   const code = String(form.class_code || '').trim()
   if (!course || !term || !code) return ''
   return `${teachingClassTermPrefix(term)}${course.course_name}${code}班`
+})
+const selectedAdminClassMajor = computed(() => {
+  if (resource.value !== 'admin-classes') return undefined
+  return (lookups.value.majors || []).find((item) => Number(item.major_id) === Number(form.major_id))
+})
+const normalizedAdminClassNo = computed(() => {
+  const classNo = Number(form.class_no || 0)
+  return classNo > 0 ? classNo : undefined
+})
+const generatedAdminClassCode = computed(() => {
+  const major = selectedAdminClassMajor.value
+  const gradeYear = Number(form.grade_year || 0)
+  const classNo = normalizedAdminClassNo.value
+  if (!major || !gradeYear || !classNo) return ''
+  return `${major.major_code}-${gradeYear}-${String(classNo).padStart(2, '0')}`
+})
+const generatedAdminClassName = computed(() => {
+  const major = selectedAdminClassMajor.value
+  const gradeYear = Number(form.grade_year || 0)
+  const classNo = normalizedAdminClassNo.value
+  if (!major || !gradeYear || !classNo) return ''
+  return `${gradeYear}级${major.major_name}${classNo}班`
 })
 const selectedTeachingClassTermLabel = computed(() => {
   const term = termOptions.value.find((item) => Number(item.term_id) === Number(selectedTeachingClassTermId.value))
@@ -1001,8 +1225,22 @@ const filteredScheduleClassrooms = computed(() => {
   return (lookups.value.classrooms || []).filter((room) => !campusId || Number(room.campus_id) === campusId)
 })
 const defaultClassAvailableAdminClasses = computed(() => {
-  const assignedIds = new Set(defaultClassAssignments.value.map((item) => Number(item.admin_class_id)))
+  const targetCourseId = Number(defaultClassTarget.value?.course_id || 0)
+  const targetTermId = Number(defaultClassTarget.value?.term_id || 0)
+  const targetTeachingClassId = Number(defaultClassTarget.value?.teaching_class_id || 0)
+  const eligiblePlanKeys = new Set(
+    (lookups.value.teachingPlans || [])
+      .filter((item) => Number(item.course_id) === targetCourseId && Number(item.term_id) === targetTermId)
+      .map((item) => `${Number(item.major_id)}:${Number(item.grade_year)}`)
+  )
+  const assignedIds = new Set(
+    allDefaultClassAssignments.value
+      .filter((item) => Number(item.teaching_class_id) === targetTeachingClassId
+        || (Number(item.course_id) === targetCourseId && Number(item.term_id) === targetTermId))
+      .map((item) => Number(item.admin_class_id))
+  )
   return (lookups.value.adminClasses || [])
+    .filter((item) => eligiblePlanKeys.has(`${Number(item.major_id)}:${Number(item.grade_year)}`))
     .filter((item) => !assignedIds.has(Number(item.admin_class_id)))
     .sort((a, b) => {
       const gradeCompare = Number(b.grade_year || 0) - Number(a.grade_year || 0)
@@ -1065,6 +1303,8 @@ watch(resource, () => {
     router.replace('/admin/teaching-classes')
     return
   }
+  resetResourceSearchState()
+  loadLookups()
   load()
 }, { immediate: true })
 watch(selectedPlanCategory, syncRequirementForm)
@@ -1076,12 +1316,58 @@ watch(() => scheduleForm.campusId, () => {
     }
   })
 })
-onMounted(loadLookups)
 
-async function load() {
+function resourcePageCacheKey() {
+  return JSON.stringify({
+    resource: resource.value,
+    page: resourcePage.value,
+    pageSize: resourcePageSize.value,
+    keyword: resourceKeyword.value.trim(),
+    campusId: resourceFilters.campusId ?? null,
+    collegeId: resourceFilters.collegeId ?? null,
+    majorId: resourceFilters.majorId ?? null,
+    buildingId: resourceFilters.buildingId ?? null,
+    gradeYear: resourceFilters.gradeYear ?? null
+  })
+}
+
+function invalidateResourceCache(resourceName = resource.value) {
+  Array.from(pagedResourceCache.keys()).forEach((key) => {
+    if (key.includes(`"resource":"${resourceName}"`)) {
+      pagedResourceCache.delete(key)
+    }
+  })
+}
+
+async function load(forceRefresh = false) {
   loading.value = true
   try {
+    if (isPagedResource.value) {
+      const cacheKey = resourcePageCacheKey()
+      if (!forceRefresh && pagedResourceCache.has(cacheKey)) {
+        const cachedPage = pagedResourceCache.get(cacheKey)!
+        rows.value = cachedPage.records || []
+        resourceTotal.value = Number(cachedPage.total || 0)
+        return
+      }
+      const page = await apiGet<PageResult<any>>(`/admin/${resource.value}`, {
+        paged: true,
+        page: resourcePage.value,
+        pageSize: resourcePageSize.value,
+        keyword: resourceKeyword.value.trim() || undefined,
+        campusId: resourceFilters.campusId,
+        collegeId: resourceFilters.collegeId,
+        majorId: resourceFilters.majorId,
+        buildingId: resourceFilters.buildingId,
+        gradeYear: resourceFilters.gradeYear
+      })
+      rows.value = page.records || []
+      resourceTotal.value = Number(page.total || 0)
+      pagedResourceCache.set(cacheKey, page)
+      return
+    }
     rows.value = await apiGet<any[]>(`/admin/${resource.value}`)
+    resourceTotal.value = rows.value.length
   } catch (error) {
     ElMessage.error((error as Error).message)
   } finally {
@@ -1089,9 +1375,99 @@ async function load() {
   }
 }
 
-async function loadLookups() {
+function searchResources() {
+  resourcePage.value = 1
+  load(true)
+}
+
+function resetResourceSearch() {
+  resetResourceSearchState()
+  load(true)
+}
+
+function resetResourceSearchState() {
+  resourceKeyword.value = ''
+  resourcePage.value = 1
+  resourceTotal.value = 0
+  resourceFilters.campusId = undefined
+  resourceFilters.collegeId = undefined
+  resourceFilters.majorId = undefined
+  resourceFilters.buildingId = undefined
+  resourceFilters.gradeYear = undefined
+}
+
+function onResourcePageSizeChange() {
+  resourcePage.value = 1
+  load(true)
+}
+
+function onSearchCampusChange() {
+  const collegeIds = new Set(searchCollegeOptions.value.map((item) => Number(item.college_id)))
+  const buildingIds = new Set(searchBuildingOptions.value.map((item) => Number(item.building_id)))
+  if (resourceFilters.collegeId && !collegeIds.has(Number(resourceFilters.collegeId))) {
+    resourceFilters.collegeId = undefined
+    resourceFilters.majorId = undefined
+  }
+  if (resourceFilters.buildingId && !buildingIds.has(Number(resourceFilters.buildingId))) {
+    resourceFilters.buildingId = undefined
+  }
+}
+
+function onSearchCollegeChange() {
+  const majorIds = new Set(searchMajorOptions.value.map((item) => Number(item.major_id)))
+  if (resourceFilters.majorId && !majorIds.has(Number(resourceFilters.majorId))) {
+    resourceFilters.majorId = undefined
+  }
+}
+
+function hierarchyMetadata(row: Record<string, any>) {
+  if (resource.value === 'majors') {
+    return {
+      id: `college-${row.college_id}`,
+      label: row.college_name || '未维护学院',
+      detail: row.campus_name || '-'
+    }
+  }
+  if (resource.value === 'classrooms') {
+    return {
+      id: `building-${row.building_id}`,
+      label: row.building_name || '未维护教学楼',
+      detail: row.campus_name || '-'
+    }
+  }
+  if (resource.value === 'admin-classes') {
+    return {
+      id: `major-${row.major_id}`,
+      label: row.major_name || '未维护专业',
+      detail: row.college_name || '-'
+    }
+  }
+  return {
+    id: `campus-${row.campus_id}`,
+    label: row.campus_name || '未维护校区',
+    detail: '-'
+  }
+}
+
+function lookupRequestParams() {
+  return {
+    includeTeachers: ['admin-classes', 'teaching-classes'].includes(resource.value),
+    includeBuildings: ['classrooms'].includes(resource.value),
+    includeClassrooms: ['class-schedules', 'teaching-classes'].includes(resource.value)
+  }
+}
+
+async function loadLookups(forceRefresh = false) {
   try {
-    lookups.value = await apiGet<Record<string, any[]>>('/lookups')
+    const params = lookupRequestParams()
+    const cacheKey = JSON.stringify(params)
+    if (!forceRefresh && lookupCache.has(cacheKey)) {
+      lookups.value = lookupCache.get(cacheKey)!
+      ensureTeachingClassTerm()
+      return
+    }
+    lookups.value = await apiGet<Record<string, any[]>>('/lookups', params)
+    lookupCache.set(cacheKey, lookups.value)
     ensureTeachingClassTerm()
   } catch {
     lookups.value = {}
@@ -1110,7 +1486,7 @@ function optionsFor(field: FieldConfig) {
 
   let list = lookups.value[key] || []
   if (resource.value === 'admin-classes' && field.prop === 'major_id' && form.college_id) {
-    list = list.filter((item) => item.college_id === form.college_id)
+    list = list.filter((item) => Number(item.college_id) === Number(form.college_id))
   }
   if (key === 'buildings' && form.campus_id) {
     list = list.filter((item) => Number(item.campus_id) === Number(form.campus_id))
@@ -1147,7 +1523,7 @@ function optionValue(key: string, item: Record<string, any>) {
 function optionLabel(key: string, item: Record<string, any>) {
   if (key === 'campuses') return item.campus_name
   if (key === 'colleges') return item.college_name
-  if (key === 'majors') return `${item.major_name}`
+  if (key === 'majors') return `${item.major_code || ''} ${item.major_name}`.trim()
   if (key === 'adminClasses') return `${item.class_name}（${item.grade_year}级）`
   if (key === 'gradeYears') return `${item.grade_year}级`
   if (key === 'academicYears') return `${item.academic_year}学年`
@@ -1226,6 +1602,9 @@ function onFieldChange(field: FieldConfig) {
     const clazz = (lookups.value.adminClasses || []).find((item) => Number(item.admin_class_id) === Number(form.admin_class_id))
     if (clazz?.grade_year) form.grade_year = clazz.grade_year
   }
+  if (resource.value === 'admin-classes' && field.prop === 'major_id') {
+    form.college_id = inferCollegeIdByMajor(Number(form.major_id))
+  }
 }
 
 function resetForm() {
@@ -1250,6 +1629,9 @@ function resetForm() {
     form.term_id = selectedTeachingClassTermId.value
     form.status = 'open'
   }
+  if (resource.value === 'rounds') {
+    form.status = 'open'
+  }
   if (resource.value === 'buildings') {
     form.campus_id = defaultCampusId()
     form.floor_count = 6
@@ -1263,6 +1645,10 @@ function resetForm() {
     form.campus_id = defaultCampusId()
     form.room_type = 'small'
     form.capacity = 60
+    form.status = 'enabled'
+  }
+  if (resource.value === 'admin-classes') {
+    form.class_no = 1
     form.status = 'enabled'
   }
   if (resource.value === 'teaching-plans') {
@@ -1309,11 +1695,19 @@ function openEdit(row: Record<string, any>) {
     form.selected_count = row.selected_count
     form.waitlist_count = row.waitlist_count
   }
+  if (resource.value === 'admin-classes') {
+    form.class_no = parseAdminClassNo(row.class_code) || 1
+  }
   dialogVisible.value = true
 }
 
 function inferCollegeIdByMajor(majorId: number) {
-  return (lookups.value.majors || []).find((item) => item.major_id === majorId)?.college_id
+  return (lookups.value.majors || []).find((item) => Number(item.major_id) === Number(majorId))?.college_id
+}
+
+function parseAdminClassNo(classCode: any) {
+  const match = String(classCode || '').match(/-(\d+)$/)
+  return match ? Number(match[1]) : undefined
 }
 
 function defaultCampusId() {
@@ -1335,6 +1729,11 @@ function buildPayload() {
       payload.selected_count = 0
       payload.waitlist_count = 0
     }
+  }
+  if (resource.value === 'admin-classes') {
+    payload.class_no = Number(form.class_no || 0)
+    payload.class_code = generatedAdminClassCode.value
+    payload.class_name = generatedAdminClassName.value
   }
   return payload
 }
@@ -1426,6 +1825,7 @@ async function loadDefaultAdminClassAssignments() {
   defaultClassLoading.value = true
   try {
     const assignments = await apiGet<any[]>('/admin/class-default-classes')
+    allDefaultClassAssignments.value = assignments
     defaultClassAssignments.value = assignments.filter((item) =>
       Number(item.teaching_class_id) === Number(defaultClassTarget.value.teaching_class_id)
     )
@@ -1450,7 +1850,7 @@ async function addDefaultAdminClass() {
     ElMessage.success('默认行政班添加成功')
     defaultAdminClassId.value = undefined
     await loadDefaultAdminClassAssignments()
-    await load()
+    await load(true)
   } catch (error) {
     ElMessage.error((error as Error).message)
   } finally {
@@ -1460,11 +1860,15 @@ async function addDefaultAdminClass() {
 
 async function removeDefaultAdminClass(row: Record<string, any>) {
   try {
-    await ElMessageBox.confirm('确认移除该默认行政班？', '移除确认', { type: 'warning' })
+    await ElMessageBox.confirm(
+      '移除后，该行政班当前已在本教学班中的所有学生都会一起退课，确定继续吗？',
+      '移除并批量退课',
+      { type: 'warning', confirmButtonText: '确认移除', cancelButtonText: '取消' }
+    )
     await apiDelete(`/admin/class-default-classes/${row.assignment_id}`)
-    ElMessage.success('默认行政班已移除')
+    ElMessage.success('默认行政班已移除，班内学生已退课')
     await loadDefaultAdminClassAssignments()
-    await load()
+    await load(true)
   } catch (error) {
     if (error instanceof Error && error.message !== 'cancel') ElMessage.error(error.message)
   }
@@ -1486,10 +1890,12 @@ async function save() {
     const payload = buildPayload()
     if (editingId.value) await apiPut(`/admin/${resource.value}/${editingId.value}`, payload)
     else await apiPost(`/admin/${resource.value}`, payload)
+    invalidateResourceCache()
+    lookupCache.clear()
     ElMessage.success('保存成功')
     dialogVisible.value = false
-    await load()
-    await loadLookups()
+    await load(true)
+    await loadLookups(true)
   } catch (error) {
     ElMessage.error((error as Error).message)
   }
@@ -1499,9 +1905,11 @@ async function remove(row: Record<string, any>) {
   try {
     await ElMessageBox.confirm('确定删除该记录吗？', '删除确认', { type: 'warning' })
     await apiDelete(`/admin/${resource.value}/${row[config.value.id]}`)
+    invalidateResourceCache()
+    lookupCache.clear()
     ElMessage.success('删除成功')
-    await load()
-    await loadLookups()
+    await load(true)
+    await loadLookups(true)
   } catch (error) {
     if (error instanceof Error && error.message !== 'cancel') ElMessage.error(error.message)
   }
@@ -1710,6 +2118,19 @@ function courseLabel(course: any) {
   margin-left: auto;
 }
 
+.resource-search-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.resource-pagination {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .toolbar-label {
   color: #606266;
   font-size: 13px;
@@ -1764,5 +2185,13 @@ function courseLabel(course: any) {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+@media (max-width: 1100px) {
+  .resource-search-controls {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
 }
 </style>
